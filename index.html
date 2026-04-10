@@ -62,6 +62,7 @@
   #status-bar { padding: 6px 12px; background: #04080e; border-top: 1px solid var(--border); font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--dim); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 4px; }
   .status-dot.ok { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .status-dot.err { background: var(--warn-red); box-shadow: 0 0 6px var(--warn-red); }
   .status-dot.loading { background: var(--warn-yellow); animation: pulse 1s infinite; }
 
   /* MAP OVERLAYS */
@@ -235,24 +236,34 @@
 
   async function refreshAlerts() {
     try {
+      const sysDot = document.getElementById('sys-dot');
+      const sysText = document.getElementById('sys-text');
+      
       // Using your custom alerts API
       const r = await fetch('https://a8890-c7a1.e.jrnm.app/alerts');
+      if (!r.ok) throw new Error('API Response Error: ' + r.status);
+      
       const data = await r.json();
       
-      // Assuming your API returns a GeoJSON FeatureCollection or an array of alerts
+      // Handle different possible JSON structures
       const alerts = data.features || (Array.isArray(data) ? data : []);
       
       document.getElementById('alert-count-badge').textContent = alerts.length;
       const list = document.getElementById('alerts-list');
-      list.innerHTML = alerts.slice(0, 15).map(a => {
-        const props = a.properties || a;
-        return `
-          <div class="alert-card" onclick="zoomToAlert('${a.id || props.id}')">
-            <strong>${props.event || 'Weather Alert'}</strong><br>
-            <span style="color:var(--dim)">${props.areaDesc || props.headline || ''}</span>
-          </div>
-        `;
-      }).join('');
+      
+      if (alerts.length === 0) {
+        list.innerHTML = '<div style="padding:10px;color:var(--dim);font-size:11px">No active alerts found.</div>';
+      } else {
+        list.innerHTML = alerts.slice(0, 20).map(a => {
+          const props = a.properties || a;
+          return `
+            <div class="alert-card" onclick="zoomToAlert('${a.id || props.id}')">
+              <strong>${props.event || 'Weather Alert'}</strong><br>
+              <span style="color:var(--dim)">${props.areaDesc || props.headline || 'Active Alert'}</span>
+            </div>
+          `;
+        }).join('');
+      }
 
       if (showAlerts) {
         alertLayerGroup.clearLayers();
@@ -273,7 +284,18 @@
           }
         });
       }
-    } catch (e) { console.error('Custom Alerts API failed', e); }
+      
+      sysDot.className = 'status-dot ok';
+      sysText.textContent = 'SYSTEM READY';
+      
+    } catch (e) { 
+      console.error('Custom Alerts API failed:', e);
+      document.getElementById('sys-dot').className = 'status-dot err';
+      document.getElementById('sys-text').textContent = 'API ERROR: ' + e.message;
+      
+      // Fallback to NWS API if custom API fails (optional, but good for reliability)
+      // fetchNWSAlerts(); 
+    }
   }
 
   function zoomToAlert(id) {
